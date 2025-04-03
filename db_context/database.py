@@ -720,6 +720,44 @@ class DatabaseConnector:
         finally:
             await self._close_connection(conn)
     
+    async def execute_query(self, query: str) -> Dict[str, Any]:
+        conn = await self.get_connection()
+        try:
+            schema = await self._get_effective_schema(conn)
+            
+            # Modify query to include schema for table names if not already specified
+            modified_query = query
+            if schema:
+                words = query.split(' ')
+                for i, word in enumerate(words):
+                    if i > 0 and words[i-1].upper() == 'FROM':
+                        if word and '.' not in word and word not in ['WHERE', 'SET', 'VALUES', 'ON']:
+                            words[i] = f"{schema}.{word}"
+                modified_query = ' '.join(words)
+            
+            print(f"Original query: {query}")
+            print(f"Modified query: {modified_query}")
+
+            cursor = conn.cursor()
+            rows = await self._execute_cursor(cursor, modified_query)
+            columns = [col[0] for col in cursor.description] if cursor.description else []
+
+            return {
+                "status": "success",
+                "columns": columns,
+                "rows": rows,
+                "rowCount": len(rows)
+            }
+
+        except Exception as e:
+            print(f"Query execution error: {str(e)}", file=sys.stderr)
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+        finally:
+            await self._close_connection(conn)
+
     async def explain_query_plan(self, query: str) -> Dict[str, Any]:
         """Get execution plan for a SQL query"""
         conn = await self.get_connection()
